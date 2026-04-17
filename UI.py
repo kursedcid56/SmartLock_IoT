@@ -103,25 +103,23 @@ hr { border-color: var(--border); margin: 25px 0; }
       <div class="fg">
         <label>Vai trò</label>
         <select id="role" onchange="toggleTime()">
-          <option value="Sinh viên">Sinh viên (Có giờ giới nghiêm)</option>
+          <option value="Sinh viên">Sinh viên (Giờ giới nghiêm)</option>
           <option value="Lao công">Lao công (Giờ hành chính)</option>
           <option value="Master">Master (24/7)</option>
         </select>
       </div>
       <div class="row fg" id="timeRow">
-        <div style="flex:1"><label>Từ:</label><input type="time" id="ts" value="05:00"></div>
-        <div style="flex:1"><label>Đến:</label><input type="time" id="te" value="23:30"></div>
+        <div style="flex:1">
+          <label>Từ (00:00 - 23:59):</label>
+          <input type="time" id="ts" value="08:00" step="60">
+        </div>
+        <div style="flex:1">
+          <label>Đến (00:00 - 23:59):</label>
+          <input type="time" id="te" value="17:00" step="60">
+        </div>
       </div>
       <button class="btn btn-blue" id="saveBtn" onclick="addCard()">
         <i class="fa-solid fa-plus"></i> LƯU VÀO DATABASE
-      </button>
-
-      <hr>
-
-      <h2><i class="fa-solid fa-flask"></i> Giả lập quẹt thẻ</h2>
-      <select id="simCard" class="fg"></select>
-      <button class="btn btn-green" id="simBtn" onclick="simulateCard()" style="margin-top:8px">
-        <i class="fa-solid fa-laptop-code"></i> QUẸT GIẢ LẬP TRÊN WEB
       </button>
     </div>
 
@@ -142,7 +140,12 @@ hr { border-color: var(--border); margin: 25px 0; }
       </div>
 
       <div class="card">
-        <h2><i class="fa-solid fa-clock-rotate-left"></i> Nhật ký hệ thống</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h2 style="margin:0; border:none; padding:0;"><i class="fa-solid fa-clock-rotate-left"></i> Nhật ký hệ thống</h2>
+            <span style="font-size: 11px; color: var(--muted); font-style: italic;">
+                <i class="fa-solid fa-info-circle"></i> Tự động lưu trữ 7 ngày
+            </span>
+        </div>
         <div class="tbl-wrap tall">
           <table>
             <thead><tr><th>Thời gian</th><th>Đối tượng</th><th>Ghi chú</th></tr></thead>
@@ -221,17 +224,21 @@ function toggleTime() {
 
 // Thêm / Cập nhật thủ công
 function addCard() {
-  const uid  = $("uid").value.trim().replace(/\s/g, "").toUpperCase();
+  const uid  = $("uid").value.trim().toUpperCase();
   const name = $("name").value.trim();
-  if (!uid || !name) { toast("Thiếu thông tin!", "err"); return; }
-  if (!/^[0-9A-F]{4,20}$/.test(uid)) { toast("UID không hợp lệ (phải là hex, 4–20 ký tự)", "err"); return; }
   const isMaster = $("role").value === "Master";
+  
+  // Lấy giá trị trực tiếp từ input time (luôn là định dạng HH:mm)
+  const startTime = isMaster ? "00:00:00" : $("ts").value + ":00";
+  const endTime   = isMaster ? "23:59:59" : $("te").value + ":00";
+
   const body = {
     uid, name,
-    role:       $("role").value,
-    time_start: isMaster ? "00:00:00" : $("ts").value + ":00",
-    time_end:   isMaster ? "23:59:59" : $("te").value + ":00",
+    role: $("role").value,
+    time_start: startTime,
+    time_end:   endTime,
   };
+  
   $("saveBtn").disabled = true;
   fetch("/api/cards", {
     method: "POST",
@@ -267,23 +274,12 @@ function openDoor() {
     .catch(e => toast("Lỗi mở cửa: " + e.message, "err"));
 }
 
-function simulateCard() {
-  const val = $("simCard").value;
-  if (!val) { toast("Chưa có thẻ để giả lập!", "err"); return; }
-  $("simBtn").disabled = true;
-  fetch("/api/simulate/" + val, { method: "POST" })
-    .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); fetchData(); })
-    .catch(e => toast("Lỗi giả lập: " + e.message, "err"))
-    .finally(() => { $("simBtn").disabled = false; });
-}
-
 function safeDate(raw) {
   const d = new Date(raw);
   return isNaN(d) ? raw : d.toLocaleString("vi-VN");
 }
 
 function fetchData() {
-  // Bỏ qua fetch nếu chưa đăng nhập
   if (localStorage.getItem("isLoggedIn") !== "true") return;
 
   fetch("/api/data")
@@ -291,7 +287,7 @@ function fetchData() {
     .then(d => {
       $("doorStatus").innerText = "Trạng thái cửa: " + d.status;
       
-      // Xử lý nút Quẹt thẻ tự động
+      // 1. Xử lý nút Quẹt thẻ tự động (Learning Mode)
       let lBtn = $("learnBtn");
       if (d.is_learning) {
           lBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ĐANG CHỜ BẠN QUẸT THẺ...';
@@ -303,17 +299,16 @@ function fetchData() {
           lBtn.disabled = false;
       }
 
-      let cHtml = "", opts = '<option value="">-- Chọn thẻ --</option><option value="UNKNOWN">Thẻ rác chưa đăng ký</option>';
+      // 2. Xử lý bảng Danh sách thẻ
+      let cHtml = "";
       d.cards.forEach(c => {
         const t = c.role === "Master" ? "24/7" : `${c.time_start.slice(0,5)} – ${c.time_end.slice(0,5)}`;
-        
-        // Tạo giao diện trạng thái và Nút Khóa/Mở Khóa
         const statusBadge = c.is_active ? '<span class="badge s">Hoạt động</span>' : '<span class="badge d">Bị Khóa</span>';
         const lockBtnIcon = c.is_active ? '<i class="fa-solid fa-lock"></i> Khóa' : '<i class="fa-solid fa-unlock"></i> Mở';
         const lockBtnColor = c.is_active ? 'background: var(--warning); color: #000;' : 'background: var(--success); color: #fff;';
         
-        cHtml += `<tr style="cursor: pointer; ${!c.is_active ? 'opacity: 0.6;' : ''}" title="Bấm vào đây để chỉnh sửa thông tin"
-            onclick="fillEditForm('${c.uid}', '${c.name}', '${c.role}', '${c.time_start}', '${c.time_end}')">
+        cHtml += `<tr style="cursor: pointer; ${!c.is_active ? 'opacity: 0.6;' : ''}" 
+                    onclick="fillEditForm('${c.uid}', '${c.name}', '${c.role}', '${c.time_start}', '${c.time_end}')">
           <td style="font-family:monospace;color:var(--warning)">${c.uid}</td>
           <td><b>${c.name}</b> <br> ${statusBadge}</td>
           <td>${c.role}</td>
@@ -323,12 +318,10 @@ function fetchData() {
             <button class="btn-sm" style="background:rgba(239,68,68,.15); color:var(--danger);" onclick="deleteCard('${c.uid}'); event.stopPropagation();"><i class="fa-solid fa-trash"></i> Xóa</button>
           </td>
         </tr>`;
-        opts += `<option value="${c.uid}">Test: ${c.name} (${c.role})</option>`;
       });
       $("cardTable").innerHTML = cHtml || `<tr><td colspan="5" class="empty">Chưa có thẻ nào.</td></tr>`;
-      $("simCard").innerHTML = opts;
-      $("simBtn").disabled = d.cards.length === 0;
       
+      // 3. Xử lý bảng Nhật ký hệ thống (Cái này sẽ hiện lại đây!)
       let lHtml = "";
       d.logs.forEach(l => {
         const cls = badgeMap[l.type] || "p";
@@ -340,7 +333,7 @@ function fetchData() {
       });
       $("logTable").innerHTML = lHtml || `<tr><td colspan="3" class="empty">Chưa có lịch sử.</td></tr>`;
     })
-    .catch(() => {});
+    .catch(e => console.error("Lỗi cập nhật dữ liệu:", e));
 }
 function toggleCardLock(uid) {
   fetch(`/api/cards/${uid}/toggle_lock`, { method: "PUT" })
@@ -373,12 +366,13 @@ function fillEditForm(uid, name, role, start, end) {
     $("name").value = name;
     $("role").value = role;
     
-    toggleTime(); // Tự động khóa/mở ô nhập giờ tùy theo Vai trò
+    toggleTime(); 
     
-    $("ts").value = start.substring(0, 5); // Cắt lấy HH:MM
+    // Đảm bảo lấy đúng định dạng HH:mm để input type="time" hiểu được
+    // start thường có dạng "05:00:00" hoặc "17:30:00"
+    $("ts").value = start.substring(0, 5); 
     $("te").value = end.substring(0, 5);
     
-    // Đổi màu và chữ nút để người dùng biết là đang Cập nhật
     $("saveBtn").innerHTML = '<i class="fa-solid fa-pen"></i> LƯU CẬP NHẬT';
     $("saveBtn").style.backgroundColor = "var(--success)"; 
 }

@@ -1,9 +1,9 @@
 from fastapi import Depends, APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
-from datetime import datetime, time as dtime
+from datetime import datetime,  time as dtime , timedelta
 import serial, time, threading
 import os
 from dotenv import load_dotenv
@@ -226,6 +226,7 @@ def admin_open(db: Session = Depends(get_db)):
 
 @router.get("/api/data")
 def get_data(db: Session = Depends(get_db)):
+    auto_cleanup_logs(db)
     cards = db.query(CardDB).all()
     logs = db.query(LogDB).order_by(desc(LogDB.timestamp)).limit(15).all()
     return {
@@ -250,3 +251,24 @@ def toggle_lock(uid: str, db: Session = Depends(get_db)):
     add_log(db, "Admin", f"{action_str}: {uid}", stype)
     
     return {"status": "success", "is_active": card.is_active}
+def auto_cleanup_logs(session):
+    """
+    Tự động xóa nhật ký cũ hơn 7 ngày để tối ưu dung lượng.
+    Cơ chế này chạy ngầm và không cần sự can thiệp của người dùng.
+    """
+    try:
+        # Tính toán mốc thời gian: Hiện tại trừ đi 7 ngày
+        limit_date = datetime.now() - timedelta(days=7)
+        
+        # Thực hiện xóa các bản ghi có timestamp nhỏ hơn mốc 7 ngày
+        session.execute(
+            text("DELETE FROM logs WHERE timestamp < :limit"),
+            {"limit": limit_date}
+        )
+        session.commit()
+    except Exception as e:
+        # Nếu lỗi (ví dụ DB đang lock), bỏ qua để không làm treo hệ thống
+        print(f"Lỗi dọn dẹp tự động: {e}")
+
+
+
