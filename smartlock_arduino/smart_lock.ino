@@ -1,4 +1,4 @@
-#include <Arduino_FreeRTOS.h>
+##include <Arduino_FreeRTOS.h>
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Servo.h>
@@ -66,7 +66,7 @@ void capNhatLCD() {
   }
   trangThaiCu = trangThai;
 }
-
+    
 // =========================================================
 // TASK 1: LẮNG NGHE LỆNH 
 // =========================================================
@@ -105,8 +105,8 @@ void Task_RFID(void *pvParameters) {
       digitalWrite(BUZZER_PIN, LOW);
         
       for (byte i = 0; i < mfrc522.uid.size; i++) {
-        lastUID[i*2]     = hex_chars[mfrc522.uid.uidByte[i] >> 4];
-        lastUID[i*2 + 1] = hex_chars[mfrc522.uid.uidByte[i] & 0x0F];
+        lastUID[i*2]     = hex_chars[mfrc522.uid.uidByte[i] >> 4]; //0*2 = 0(sodau);0*2+1=1(sothu2)
+        lastUID[i*2 + 1] = hex_chars[mfrc522.uid.uidByte[i] & 0x0F];//1*2=2(sothu3);1*2+1=3(sothu4)
       }
       lastUID[mfrc522.uid.size * 2] = '\0'; 
 
