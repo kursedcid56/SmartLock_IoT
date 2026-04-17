@@ -127,7 +127,7 @@ void Task_RFID(void *pvParameters) {
 // =========================================================
 void Task_Action(void *pvParameters) {
   (void) pvParameters;
-  vTaskDelay( 100 / portTICK_PERIOD_MS ); // Nhường CPU lúc khởi động để LCD không bị treo
+  vTaskDelay( 100 / portTICK_PERIOD_MS ); 
   
   int stateHienTai = -1;
   TickType_t thoiGianBatDauState = 0; 
@@ -138,12 +138,12 @@ void Task_Action(void *pvParameters) {
   for (;;) {
     capNhatLCD(); 
 
-    // 1. BẮT SỰ KIỆN THAY ĐỔI
+    // 1. BẮT SỰ KIỆN THAY ĐỔI TRẠNG THÁI
     if (trangThai != stateHienTai) {
         stateHienTai = trangThai;
         thoiGianBatDauState = xTaskGetTickCount(); 
 
-        if (stateHienTai == 1) { 
+        if (stateHienTai == 1) { // MỞ CỬA
             cuaDangMo = true;
             thoiGianMoCua = xTaskGetTickCount();
 
@@ -155,14 +155,14 @@ void Task_Action(void *pvParameters) {
             vTaskDelay( 200 / portTICK_PERIOD_MS );
             digitalWrite(BUZZER_PIN, LOW);
         }
-        else if (stateHienTai == 0 && !cuaDangMo) { 
+        else if (stateHienTai == 0 && !cuaDangMo) { // VỀ TRẠNG THÁI CHỜ
             digitalWrite(LED_XANH, LOW);
             digitalWrite(LED_DO, HIGH);
             digitalWrite(BUZZER_PIN, LOW);
         }
     }
 
-    // 2. LUỒNG ĐÓNG CỬA 
+    // 2. LUỒNG TỰ ĐỘNG ĐÓNG CỬA (Sau 3 giây)
     if (cuaDangMo) {
         if ( (xTaskGetTickCount() - thoiGianMoCua) * portTICK_PERIOD_MS >= 3000 ) {
             myServo.write(0); 
@@ -174,18 +174,31 @@ void Task_Action(void *pvParameters) {
         }
     }
 
-    // 3. LUỒNG BÁO LỖI
-    if (stateHienTai == 2 || stateHienTai == 4) {
-        long thoiGianDaTroi = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
-        if (thoiGianDaTroi < 2000) {
-            if ((thoiGianDaTroi / 100) % 2 == 0) digitalWrite(BUZZER_PIN, HIGH);
-            else digitalWrite(BUZZER_PIN, LOW);
+    // 3. LUỒNG BÁO LỖI (Gộp trạng thái 2: Sai thẻ, 4: Sai giờ, 7: Thẻ đã tồn tại)
+    // Đặc điểm: Kêu bíp bíp bíp nhanh trong 2 giây
+    if (stateHienTai == 2 || stateHienTai == 4 || stateHienTai == 7) {
+        long dt = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
+        if (dt < 2000) {
+            digitalWrite(BUZZER_PIN, (dt / 100) % 2 == 0); 
         } else {
+            digitalWrite(BUZZER_PIN, LOW);
             trangThai = 0; 
         }
     }
 
-    // 4. LUỒNG LỖI MẠNG
+    // 4. LUỒNG BÁO THẺ BỊ KHÓA (Trạng thái 8)
+    // Đặc điểm: Kêu 1 tiếng "Títttt" dài 2 giây rồi tắt
+    if (stateHienTai == 8) {
+        long dt = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
+        if (dt < 2000) {
+            digitalWrite(BUZZER_PIN, HIGH);
+        } else {
+            digitalWrite(BUZZER_PIN, LOW);
+            trangThai = 0; 
+        }
+    }
+
+    // 5. LUỒNG LỖI MẠNG (Trạng thái 3)
     if (stateHienTai == 3) {
         if ( (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS >= 3000 ) {
             lcd.clear();
@@ -196,49 +209,25 @@ void Task_Action(void *pvParameters) {
         }
     }
     
-    // 5. LUỒNG HIỆN THÔNG BÁO OK
+    // 6. LUỒNG THÊM THẺ THÀNH CÔNG (Trạng thái 5)
     if (stateHienTai == 5) {
-        long thoiGianDaTroi = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
-        if (thoiGianDaTroi < 2000) { 
-            if (thoiGianDaTroi < 600) {
-                if ((thoiGianDaTroi / 100) % 2 == 0) digitalWrite(BUZZER_PIN, HIGH);
-                else digitalWrite(BUZZER_PIN, LOW);
-            } else {
-                digitalWrite(BUZZER_PIN, LOW); 
-            }
+        long dt = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
+        if (dt < 2000) { 
+            if (dt < 600) digitalWrite(BUZZER_PIN, (dt / 100) % 2 == 0);
+            else digitalWrite(BUZZER_PIN, LOW);
         } else {
             digitalWrite(BUZZER_PIN, LOW); 
             trangThai = 0; 
         }
     }
 
-    // 6. LUỒNG CHỜ THÊM THẺ
+    // 7. LUỒNG CHỜ QUẸT THẺ ĐỂ THÊM (Trạng thái 6)
     if (stateHienTai == 6) {
         if ( (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS >= 15000 ) {
             trangThai = 0; 
-            digitalWrite(BUZZER_PIN, HIGH); 
-            vTaskDelay(50/portTICK_PERIOD_MS); 
-            digitalWrite(BUZZER_PIN, LOW); 
+            digitalWrite(BUZZER_PIN, HIGH); vTaskDelay(50/portTICK_PERIOD_MS); digitalWrite(BUZZER_PIN, LOW);
         }
     }
-    if (stateHienTai == 7) {
-    long thoiGianDaTroi = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
-    if (thoiGianDaTroi < 2000) {
-        if ((thoiGianDaTroi / 100) % 2 == 0) digitalWrite(BUZZER_PIN, HIGH);
-        else digitalWrite(BUZZER_PIN, LOW);
-    if (stateHienTai == 8) {
-        long thoiGianDaTroi = (xTaskGetTickCount() - thoiGianBatDauState) * portTICK_PERIOD_MS;
-        if (thoiGianDaTroi < 2000) {
-            digitalWrite(BUZZER_PIN, HIGH); // Kêu dài 2s báo hiệu bị khóa
-        } else {
-            digitalWrite(BUZZER_PIN, LOW);
-            trangThai = 0; 
-        }
-    }    
-    } else {
-        trangThai = 0; 
-    }
-}
 
     vTaskDelay( 50 / portTICK_PERIOD_MS );
   }
